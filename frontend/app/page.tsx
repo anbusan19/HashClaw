@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+import AppHeader from "@/components/AppHeader";
 import Sidebar from "@/components/Sidebar";
 import ChatPanel from "@/components/ChatPanel";
 
@@ -85,37 +85,7 @@ export default function Home() {
     <div className="flex flex-col h-screen bg-black overflow-hidden">
 
       {/* Header */}
-      <header className="h-14 flex items-center px-5 gap-4 border-b border-border bg-surface flex-shrink-0">
-        <div className="flex items-center gap-2.5">
-          <Image src="/hashclaw-logo.png" alt="HashClaw" width={28} height={28} />
-          <span className="font-mono text-sm font-semibold uppercase tracking-[0.12em] text-white">HashClaw</span>
-        </div>
-
-        <div className="h-4 w-px bg-border mx-1" />
-
-        <span className="font-mono text-2xs uppercase tracking-widest text-muted flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-white opacity-60 animate-pulse" />
-          Testnet
-        </span>
-
-        <div className="ml-auto flex items-center gap-3">
-          {address && (
-            <span className="font-mono text-2xs uppercase tracking-wider text-muted">
-              {address.slice(0, 6)}…{address.slice(-4)}
-            </span>
-          )}
-          <button
-            onClick={() => (address ? disconnect() : connectWallet(false))}
-            className={`font-mono text-2xs uppercase tracking-[0.12em] px-3 py-1.5 rounded border transition-all ${
-              address
-                ? "border-white text-white hover:bg-white hover:text-black"
-                : "border-border text-muted hover:border-white hover:text-white"
-            }`}
-          >
-            {address ? "Disconnect" : "Connect Wallet"}
-          </button>
-        </div>
-      </header>
+      <AppHeader address={address} onConnect={() => connectWallet(false)} onDisconnect={disconnect} />
 
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
