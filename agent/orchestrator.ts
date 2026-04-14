@@ -10,12 +10,24 @@ import { getRebalanceRecommendation, PortfolioSnapshot } from "./groqAdvisor";
  * Main agent loop:
  *   1. Fetch live yield signals from chain
  *   2. Load user portfolio from TreasuryVault
- *   3. Ask Groq for a rebalance recommendation
- *   4. If legs exist, submit to RebalanceExecutor on-chain
- *   5. Repeat on POLL_INTERVAL
+ *   3. Check drift threshold — skip if portfolio is already close to target
+ *   4. Ask Groq for a rebalance recommendation
+ *   5. If legs exist and cooldown has passed, submit to RebalanceExecutor
+ *   6. Repeat on POLL_INTERVAL
  */
 
-const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS ?? "60000", 10); // default 1 min
+const POLL_INTERVAL_MS   = parseInt(process.env.POLL_INTERVAL_MS   ?? "300000", 10); // 5 min
+const REBALANCE_COOLDOWN_MS = parseInt(process.env.REBALANCE_COOLDOWN_MS ?? "1800000", 10); // 30 min
+// Only rebalance if the largest single-asset drift exceeds this threshold (fraction, e.g. 0.05 = 5%)
+const DRIFT_THRESHOLD    = parseFloat(process.env.DRIFT_THRESHOLD ?? "0.05");
+
+// Conservative target weights (must sum to 1)
+const TARGET_WEIGHTS: Record<number, number> = {
+  0: 0.40, // xXAG
+  1: 0.30, // xMMF
+  2: 0.22, // veHSK
+  3: 0.08, // USDC-USDT LP
+};
 
 // ── Minimal ABIs ─────────────────────────────────────────────────────────────
 const VAULT_ABI = [
@@ -28,9 +40,12 @@ const EXECUTOR_ABI = [
   "function submitAndExecute(address user, uint256[] fromAssetIds, uint256[] toAssetIds, uint256[] amounts, uint256[] minAmountsOut, string reasoning) returns (uint256 planId)",
 ];
 
+// ── State ─────────────────────────────────────────────────────────────────────
+let lastRebalanceAt = 0;
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 function getContracts() {
-  const rpcUrl = process.env.HASHKEY_RPC_URL ?? "https://mainnet.hsk.xyz";
+  const rpcUrl = process.env.HASHKEY_RPC_URL ?? "https://testnet.hsk.xyz";
   const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) throw new Error("PRIVATE_KEY not set in .env");
 
@@ -40,7 +55,7 @@ function getContracts() {
   const vaultAddr = process.env.TREASURY_VAULT_ADDRESS;
   const executorAddr = process.env.REBALANCE_EXECUTOR_ADDRESS;
   if (!vaultAddr || !executorAddr) {
-    throw new Error("TREASURY_VAULT_ADDRESS or REBALANCE_EXECUTOR_ADDRESS not set. Run: pnpm deploy");
+    throw new Error("TREASURY_VAULT_ADDRESS or REBALANCE_EXECUTOR_ADDRESS not set. Run: pnpm run deploy");
   }
 
   const vault = new ethers.Contract(vaultAddr, VAULT_ABI, wallet);
@@ -53,7 +68,7 @@ async function loadPortfolio(vault: ethers.Contract, userAddress: string): Promi
   const [assetIds, balances, symbols]: [bigint[], bigint[], string[]] =
     await vault.getPortfolio(userAddress);
 
-  const riskProfile: number = await vault.userRiskProfile(userAddress);
+  const riskProfile = Number(await vault.userRiskProfile(userAddress));
 
   return {
     user: userAddress,
@@ -65,6 +80,24 @@ async function loadPortfolio(vault: ethers.Contract, userAddress: string): Promi
       decimals: 18,
     })),
   };
+}
+
+/**
+ * Returns the max single-asset drift from target weights.
+ * e.g. if xXAG is 48% but target is 40%, drift is 0.08.
+ */
+function maxDrift(portfolio: PortfolioSnapshot): number {
+  const total = portfolio.balances.reduce((sum, b) => sum + b.amount, 0n);
+  if (total === 0n) return 0;
+
+  let max = 0;
+  for (const b of portfolio.balances) {
+    const actual = Number(b.amount) / Number(total);
+    const target = TARGET_WEIGHTS[b.assetId] ?? 0;
+    const drift = Math.abs(actual - target);
+    if (drift > max) max = drift;
+  }
+  return max;
 }
 
 async function executeRebalance(
@@ -86,8 +119,7 @@ async function executeRebalance(
     const amount = (bal.amount * BigInt(Math.round(leg.fraction * 10000))) / 10000n;
     if (amount === 0n) continue;
 
-    // 0.5% slippage tolerance
-    const minOut = (amount * 9950n) / 10000n;
+    const minOut = (amount * 9950n) / 10000n; // 0.5% slippage
 
     fromIds.push(BigInt(leg.fromAssetId));
     toIds.push(BigInt(leg.toAssetId));
@@ -96,21 +128,17 @@ async function executeRebalance(
   }
 
   if (fromIds.length === 0) {
-    console.log("  No actionable legs (zero balances or fractions). Skipping tx.");
+    console.log("  No actionable legs (zero balances). Skipping tx.");
     return;
   }
 
   console.log(`  Submitting ${fromIds.length} leg(s) to RebalanceExecutor...`);
   const tx = await executor.submitAndExecute(
-    userAddress,
-    fromIds,
-    toIds,
-    amounts,
-    minAmounts,
-    summary
+    userAddress, fromIds, toIds, amounts, minAmounts, summary
   );
   const receipt = await tx.wait();
   console.log("  Rebalance tx confirmed:", receipt.hash);
+  lastRebalanceAt = Date.now();
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────
@@ -119,15 +147,32 @@ async function runOnce(): Promise<void> {
   const userAddress = wallet.address;
 
   console.log("\n[agent] tick —", new Date().toISOString());
-  console.log("  User:", userAddress);
 
   const [signals, portfolio] = await Promise.all([
     fetchAllYieldSignals(),
     loadPortfolio(vault, userAddress),
   ]);
 
-  console.log("  Yield signals fetched:", signals.map((s) => `${s.symbol} ${s.currentApy.toFixed(1)}%`).join(", "));
+  console.log("  Yields:", signals.map((s) => `${s.symbol} ${s.currentApy.toFixed(1)}%`).join(", "));
 
+  // ── Drift check ─────────────────────────────────────────────────────────────
+  const drift = maxDrift(portfolio);
+  console.log(`  Max drift: ${(drift * 100).toFixed(1)}% (threshold ${(DRIFT_THRESHOLD * 100).toFixed(0)}%)`);
+
+  if (drift < DRIFT_THRESHOLD) {
+    console.log("  Portfolio within target bands — hold.");
+    return;
+  }
+
+  // ── Cooldown check ──────────────────────────────────────────────────────────
+  const msSinceLast = Date.now() - lastRebalanceAt;
+  if (lastRebalanceAt > 0 && msSinceLast < REBALANCE_COOLDOWN_MS) {
+    const waitMin = Math.ceil((REBALANCE_COOLDOWN_MS - msSinceLast) / 60000);
+    console.log(`  Cooldown active — next rebalance in ~${waitMin} min.`);
+    return;
+  }
+
+  // ── Ask AI ──────────────────────────────────────────────────────────────────
   const recommendation = await getRebalanceRecommendation(portfolio, signals);
   console.log("  AI summary:", recommendation.summary);
   console.log("  Legs proposed:", recommendation.legs.length);
@@ -135,13 +180,16 @@ async function runOnce(): Promise<void> {
   if (recommendation.legs.length > 0) {
     await executeRebalance(executor, userAddress, portfolio, recommendation.legs, recommendation.summary);
   } else {
-    console.log("  Hold — no rebalance needed.");
+    console.log("  AI recommends hold.");
   }
 }
 
 async function main(): Promise<void> {
-  console.log("HashClaw agent starting. Poll interval:", POLL_INTERVAL_MS / 1000, "s");
-  // Run immediately, then on interval
+  console.log("HashClaw agent starting.");
+  console.log(`  Poll interval:     ${POLL_INTERVAL_MS / 1000}s`);
+  console.log(`  Rebalance cooldown: ${REBALANCE_COOLDOWN_MS / 60000} min`);
+  console.log(`  Drift threshold:   ${(DRIFT_THRESHOLD * 100).toFixed(0)}%`);
+
   await runOnce().catch(console.error);
   setInterval(() => runOnce().catch(console.error), POLL_INTERVAL_MS);
 }
