@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HashClaw</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f14;
+      --surface:   #151820;
+      --border:    #232733;
+      --accent:    #4f8ef7;
+      --accent2:   #7c5cfc;
+      --text:      #e2e6f0;
+      --muted:     #6b7280;
+      --green:     #34d399;
+      --red:       #f87171;
+      --radius:    12px;
+      --font:      'Inter', system-ui, sans-serif;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+
+    /* ── Layout ── */
+    .shell {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .logo { font-size: 18px; font-weight: 700; letter-spacing: -.4px; }
+    .logo span { color: var(--accent); }
+    .badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 99px;
+      background: rgba(79,142,247,.15); color: var(--accent); border: 1px solid rgba(79,142,247,.3);
+    }
+    .network-pill {
+      margin-left: auto; display: flex; align-items: center; gap: 6px;
+      font-size: 12px; color: var(--muted);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+
+    /* ── Sidebar ── */
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .panel-title {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--muted); margin-bottom: 8px;
+    }
+    .asset-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 10px; background: var(--bg); border-radius: 8px;
+      border: 1px solid var(--border); margin-bottom: 6px;
+    }
+    .asset-sym { font-weight: 600; font-size: 13px; }
+    .asset-bal { color: var(--muted); font-size: 12px; }
+    .apy-row {
+      display: flex; justify-content: space-between;
+      padding: 6px 10px; border-radius: 8px;
+      border: 1px solid var(--border); margin-bottom: 6px;
+      background: var(--bg);
+    }
+    .apy-val { color: var(--green); font-weight: 600; font-size: 12px; }
+    .risk-tag {
+      display: inline-block; padding: 3px 10px; border-radius: 99px;
+      font-size: 11px; font-weight: 600;
+    }
+    .risk-0 { background: rgba(52,211,153,.12); color: var(--green); }
+    .risk-1 { background: rgba(79,142,247,.12); color: var(--accent); }
+    .risk-2 { background: rgba(248,113,113,.12); color: var(--red); }
+
+    .refresh-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12px;
+      transition: border-color .15s, color .15s;
+    }
+    .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .skeleton { background: var(--border); border-radius: 6px; height: 14px; margin-bottom: 8px; animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:.5} 50%{opacity:1} }
+
+    /* ── Chat panel ── */
+    .chat-panel {
+      display: flex; flex-direction: column; height: 100%;
+    }
+    .messages {
+      flex: 1; overflow-y: auto; padding: 20px 24px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    .msg {
+      max-width: 72%; padding: 12px 16px; border-radius: var(--radius);
+      line-height: 1.6; font-size: 13.5px; white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff; border-bottom-right-radius: 4px;
+    }
+    .msg.assistant {
+      align-self: flex-start;
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); border-bottom-left-radius: 4px;
+    }
+    .msg.assistant.typing { opacity: .6; }
+    .msg-time { font-size: 11px; color: var(--muted); margin-top: 4px; text-align: right; }
+
+    /* Suggestions */
+    .suggestions {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 0 24px 12px;
+    }
+    .suggestion-chip {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--muted); border-radius: 99px; padding: 5px 14px;
+      font-size: 12px; cursor: pointer; transition: border-color .15s, color .15s;
+      white-space: nowrap;
+    }
+    .suggestion-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Input bar */
+    .input-bar {
+      padding: 12px 20px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      display: flex; gap: 10px; align-items: flex-end;
+    }
+    textarea {
+      flex: 1; resize: none; overflow: hidden;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px;
+      color: var(--text); font-family: var(--font); font-size: 13.5px;
+      line-height: 1.5; max-height: 140px; min-height: 42px;
+      outline: none; transition: border-color .15s;
+    }
+    textarea:focus { border-color: var(--accent); }
+    textarea::placeholder { color: var(--muted); }
+    .send-btn {
+      width: 42px; height: 42px; flex-shrink: 0;
+      background: var(--accent); border: none; border-radius: 10px;
+      color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: opacity .15s;
+    }
+    .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .send-btn svg { width: 18px; height: 18px; }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">Hash<span>Claw</span></div>
+    <div class="badge">AI Wealth Manager</div>
+    <div class="network-pill">
+      <div class="dot"></div>
+      HashKey Chain Testnet
+    </div>
+  </header>
+
+  <!-- Sidebar -->
+  <aside>
+    <!-- Portfolio -->
+    <div>
+      <div class="panel-title">Portfolio</div>
+      <div id="portfolio-loading">
+        <div class="skeleton" style="width:80%"></div>
+        <div class="skeleton" style="width:60%"></div>
+        <div class="skeleton" style="width:70%"></div>
+      </div>
+      <div id="portfolio-content" style="display:none"></div>
+    </div>
+
+    <!-- Yields -->
+    <div>
+      <div class="panel-title">Live APY</div>
+      <div id="yields-loading">
+        <div class="skeleton" style="width:90%"></div>
+        <div class="skeleton" style="width:75%"></div>
+      </div>
+      <div id="yields-content" style="display:none"></div>
+    </div>
+
+    <button class="refresh-btn" onclick="loadSidebar()">↻ Refresh</button>
+  </aside>
+
+  <!-- Chat -->
+  <div class="chat-panel">
+    <div class="messages" id="messages">
+      <div class="msg assistant">
+        Hey! I'm HashClaw, your AI wealth manager on HashKey Chain.<br><br>
+        I can analyse your portfolio, explain live yield opportunities, and recommend rebalances based on your risk profile. What would you like to know?
+      </div>
+    </div>
+
+    <div class="suggestions" id="suggestions">
+      <div class="suggestion-chip" onclick="sendSuggestion(this)">Show my portfolio</div>
+      <div class="suggestion-chip" onclick="sendSuggestion(this)">Best yield right now?</div>
+      <div class="suggestion-chip" onclick="sendSuggestion(this)">Should I rebalance?</div>
+      <div class="suggestion-chip" onclick="sendSuggestion(this)">Explain veHSK staking</div>
+      <div class="suggestion-chip" onclick="sendSuggestion(this)">What's my risk profile?</div>
+    </div>
+
+    <div class="input-bar">
+      <textarea id="input" placeholder="Ask HashClaw anything…" rows="1"></textarea>
+      <button class="send-btn" id="send-btn" onclick="sendMessage()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const history = [];
+
+  // ── Sidebar data ────────────────────────────────────────────────────────────
+  async function loadSidebar() {
+    loadPortfolio();
+    loadYields();
+  }
+
+  async function loadPortfolio() {
+    document.getElementById('portfolio-loading').style.display = 'block';
+    document.getElementById('portfolio-content').style.display = 'none';
+    try {
+      const res = await fetch('/api/portfolio');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const riskClass = 'risk-' + data.riskProfile;
+      let html = `<div style="margin-bottom:10px">
+        <span style="color:var(--muted);font-size:12px">Risk: </span>
+        <span class="risk-tag ${riskClass}">${data.riskLabel}</span>
+      </div>`;
+
+      for (const a of data.assets) {
+        const bal = parseFloat(a.balance);
+        if (bal === 0) continue;
+        html += `<div class="asset-row">
+          <span class="asset-sym">${a.symbol}</span>
+          <span class="asset-bal">${bal.toFixed(4)}</span>
+        </div>`;
+      }
+
+      if (!html.includes('asset-row')) {
+        html += `<div style="color:var(--muted);font-size:12px;padding:8px 0">No deposits yet.</div>`;
+      }
+
+      const shortAddr = data.user.slice(0, 6) + '…' + data.user.slice(-4);
+      html += `<div style="color:var(--muted);font-size:11px;margin-top:6px">${shortAddr}</div>`;
+
+      document.getElementById('portfolio-content').innerHTML = html;
+      document.getElementById('portfolio-loading').style.display = 'none';
+      document.getElementById('portfolio-content').style.display = 'block';
+    } catch (e) {
+      document.getElementById('portfolio-loading').innerHTML =
+        `<div style="color:var(--muted);font-size:12px">${e.message}</div>`;
+    }
+  }
+
+  async function loadYields() {
+    document.getElementById('yields-loading').style.display = 'block';
+    document.getElementById('yields-content').style.display = 'none';
+    try {
+      const res = await fetch('/api/yields');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      let html = '';
+      for (const s of data.signals) {
+        html += `<div class="apy-row">
+          <span style="font-size:12px">${s.symbol}</span>
+          <span class="apy-val">${s.currentApy.toFixed(2)}%</span>
+        </div>`;
+      }
+
+      document.getElementById('yields-content').innerHTML = html;
+      document.getElementById('yields-loading').style.display = 'none';
+      document.getElementById('yields-content').style.display = 'block';
+    } catch (e) {
+      document.getElementById('yields-loading').innerHTML =
+        `<div style="color:var(--muted);font-size:12px">${e.message}</div>`;
+    }
+  }
+
+  // ── Chat ────────────────────────────────────────────────────────────────────
+  function now() {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function appendMsg(role, content) {
+    const msgs = document.getElementById('messages');
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    div.textContent = content;
+    const time = document.createElement('div');
+    time.className = 'msg-time';
+    time.textContent = now();
+    div.appendChild(time);
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+    return div;
+  }
+
+  function sendSuggestion(el) {
+    document.getElementById('input').value = el.textContent;
+    document.getElementById('suggestions').style.display = 'none';
+    sendMessage();
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('input');
+    const btn = document.getElementById('send-btn');
+    const message = input.value.trim();
+    if (!message) return;
+
+    input.value = '';
+    input.style.height = '';
+    btn.disabled = true;
+
+    document.getElementById('suggestions').style.display = 'none';
+    appendMsg('user', message);
+    history.push({ role: 'user', content: message });
+
+    const typingDiv = appendMsg('assistant', '…');
+    typingDiv.classList.add('typing');
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history: history.slice(0, -1) }),
+      });
+      const data = await res.json();
+      const reply = data.error ? `Error: ${data.error}` : data.reply;
+
+      typingDiv.classList.remove('typing');
+      // Replace children: keep time div, update text
+      typingDiv.childNodes[0].textContent = reply;
+      history.push({ role: 'assistant', content: reply });
+    } catch (e) {
+      typingDiv.textContent = 'Network error — is the server running?';
+      typingDiv.classList.remove('typing');
+    }
+
+    btn.disabled = false;
+    input.focus();
+  }
+
+  // Auto-resize textarea
+  document.getElementById('input').addEventListener('input', function () {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 140) + 'px';
+  });
+
+  // Enter to send (Shift+Enter for newline)
+  document.getElementById('input').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Init
+  loadSidebar();
+</script>
+</body>
+</html>

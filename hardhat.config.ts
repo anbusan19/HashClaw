@@ -4,8 +4,7 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY || "0x" + "0".repeat(64);
-const HASHKEY_RPC_URL = process.env.HASHKEY_RPC_URL || "https://mainnet.hsk.xyz";
+const PRIVATE_KEY = process.env.PRIVATE_KEY !== undefined ? [process.env.PRIVATE_KEY] : [];
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -21,18 +20,40 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 31337,
     },
-    hashkey: {
-      url: HASHKEY_RPC_URL,
-      chainId: 177,
-      accounts: [PRIVATE_KEY],
-      gasPrice: "auto",
-    },
     hashkeyTestnet: {
-      url: "https://hashkeychain-testnet.alt.technology",
+      url: process.env.HASHKEY_RPC_URL || "https://testnet.hsk.xyz",
       chainId: 133,
-      accounts: [PRIVATE_KEY],
-      gasPrice: "auto",
+      accounts: PRIVATE_KEY,
     },
+    hashkey: {
+      url: "https://mainnet.hsk.xyz",
+      chainId: 177,
+      accounts: PRIVATE_KEY,
+    },
+  },
+  etherscan: {
+    apiKey: {
+      hashkeyTestnet: "no-api-key-needed",
+      hashkey: "no-api-key-needed",
+    },
+    customChains: [
+      {
+        network: "hashkeyTestnet",
+        chainId: 133,
+        urls: {
+          apiURL: "https://testnet-explorer.hsk.xyz/api",
+          browserURL: "https://testnet-explorer.hsk.xyz",
+        },
+      },
+      {
+        network: "hashkey",
+        chainId: 177,
+        urls: {
+          apiURL: "https://hashkey.blockscout.com/api",
+          browserURL: "https://hashkey.blockscout.com",
+        },
+      },
+    ],
   },
   paths: {
     sources: "./contracts",

@@ -6,10 +6,11 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
-    "deploy": "hardhat run scripts/deploy.ts --network hashkey",
-    "seed": "hardhat run scripts/seed.ts --network hashkey",
+    "deploy": "hardhat run scripts/deploy.ts --network hashkeyTestnet",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network hashkey",
+    "seed": "hardhat run scripts/seed.ts --network hashkeyTestnet",
     "agent": "ts-node agent/orchestrator.ts",
-    "bot": "ts-node bot/index.ts",
+    "ui": "ts-node frontend/server.ts",
     "dev": "ts-node agent/orchestrator.ts"
   },
   "keywords": [
