@@ -52,6 +52,8 @@ export default function AllocationChart({ assets }: Props) {
               textTransform: "uppercase",
               letterSpacing: "0.05em",
             }}
+            itemStyle={{ color: "#fff" }}
+            labelStyle={{ color: "#aaa" }}
             formatter={(value: number, name: string) => [
               `${((value / total) * 100).toFixed(1)}%  (${value.toFixed(2)})`,
               name,

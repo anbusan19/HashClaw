@@ -22,6 +22,8 @@ interface Message {
     plan: RebalancePlan;
     legs: RebalanceLegSummary[];
   };
+  // set when a rebalance has been confirmed on-chain
+  explorerUrl?: string;
 }
 
 interface Props { address: string | null; signer: unknown }
@@ -56,32 +58,49 @@ const WELCOME: Message = {
   ts: "—",
 };
 
-function loadMessages(): Message[] {
-  if (typeof window === "undefined") return [WELCOME];
-  try {
-    const saved = sessionStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved) as Message[];
-  } catch { /* ignore */ }
-  return [WELCOME];
-}
-
 function now() {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function renderContent(content: string) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = content.split(urlRegex);
+  return parts.map((part, i) =>
+    urlRegex.test(part)
+      ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline hover:opacity-70 break-all">{part}</a>
+      : part
+  );
+}
+
 export default function ChatPanel({ address, signer }: Props) {
-  const [messages, setMessages] = useState<Message[]>(loadMessages);
+  const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [showChips, setShowChips] = useState(true);
   const [executingPlanIdx, setExecutingPlanIdx] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const persistRunCount = useRef(0);
+
+  // Load persisted history on mount (client-only — avoids SSR hydration mismatch)
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as Message[];
+        if (parsed.length > 0) setMessages(parsed);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
-  // Persist messages across navigation
+  // Persist messages across navigation.
+  // Skip the very first run — it always fires with [WELCOME] (initial state)
+  // before the load effect's setMessages has been applied, which would
+  // overwrite the saved history in sessionStorage.
   useEffect(() => {
+    if (persistRunCount.current === 0) { persistRunCount.current = 1; return; }
     try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); } catch { /* ignore */ }
   }, [messages]);
 
@@ -149,8 +168,9 @@ export default function ChatPanel({ address, signer }: Props) {
         ...m,
         {
           role: "assistant",
-          content: `Rebalance confirmed on-chain. ${plan.legs.length} swap${plan.legs.length !== 1 ? "s" : ""} executed.\nTx: ${explorerUrl}`,
+          content: `Rebalance confirmed on-chain. ${plan.legs.length} swap${plan.legs.length !== 1 ? "s" : ""} executed.`,
           ts: now(),
+          explorerUrl,
         },
       ]);
     } catch (e: unknown) {
@@ -222,7 +242,7 @@ export default function ChatPanel({ address, signer }: Props) {
                   : "bg-surface-2 border border-border text-white rounded-bl-sm"
               }`}
             >
-              {msg.content}
+              {renderContent(msg.content)}
 
               {/* Sign & Execute button — only on ready plan messages */}
               {msg.rebalancePlan && (
@@ -237,6 +257,23 @@ export default function ChatPanel({ address, signer }: Props) {
                     ? "Connect wallet to sign"
                     : "Sign & Execute Rebalance"}
                 </button>
+              )}
+
+              {/* View on Explorer button — only on confirmed tx messages */}
+              {msg.explorerUrl && (
+                <a
+                  href={msg.explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-3 w-full font-mono text-2xs uppercase tracking-[0.12em] px-3 py-2 rounded border border-white text-white hover:bg-white hover:text-black transition-all flex items-center justify-center gap-2"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                  View on Explorer
+                </a>
               )}
             </div>
             <span className="font-mono text-2xs text-muted mt-1 uppercase tracking-wider">{msg.ts}</span>

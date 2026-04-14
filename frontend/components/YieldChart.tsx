@@ -58,6 +58,8 @@ export default function YieldChart({ signals }: Props) {
             fontFamily: "var(--font-mono)",
             color: "#fff",
           }}
+          itemStyle={{ color: "#fff" }}
+          labelStyle={{ color: "#aaa" }}
           formatter={(v: number) => [`${v.toFixed(2)}% APY`, ""]}
         />
         <Bar dataKey="currentApy" radius={[0, 2, 2, 0]}>
