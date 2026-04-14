@@ -56,6 +56,19 @@ export default function AppHeader({ address, onConnect, onDisconnect }: Props) {
         Testnet
       </span>
 
+      {/* Faucet */}
+      <a
+        href="https://faucet.hashkeychain.net/faucet"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-mono text-2xs uppercase tracking-[0.12em] px-3 py-1.5 rounded border border-border text-muted hover:border-white hover:text-white transition-all flex items-center gap-1.5"
+      >
+        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M6 1v4M4 3l2-2 2 2M3 6c0 2 1 4 3 4s3-2 3-4H3z" />
+        </svg>
+        Faucet
+      </a>
+
       {/* Wallet */}
       <div className="ml-auto flex items-center gap-3">
         {address && (
