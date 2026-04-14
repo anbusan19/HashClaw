@@ -1,6 +1,5 @@
-# HashClaw — AI-Powered On-Chain Wealth Manager
+# HashClaw — Autonomous RWA Portfolio Rebalancer
 
-> **HashKey Chain On-Chain Horizon Hackathon** | AI Track × PayFi Track  
 > Deployed on HashKey Chain Testnet (chainId 133) · AI by Groq / LLaMA-3.3-70b · Settled via HSP
 
 ---
@@ -33,32 +32,32 @@ Explorer: [testnet-explorer.hsk.xyz](https://testnet-explorer.hsk.xyz)
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│                    CHAT UI (browser)                  │
-│         Wallet connect · Deposit · Risk profile       │
+│                    CHAT UI (browser)                 │
+│         Wallet connect · Deposit · Risk profile      │
 └───────────────────────────┬──────────────────────────┘
                             │ HTTP
                             ▼
 ┌──────────────────────────────────────────────────────┐
-│               NODE SERVER  (frontend/server.ts)       │
-│  /api/config  /api/portfolio  /api/yields  /api/chat  │
-│                    Groq LLaMA-3.3-70b                 │
+│               NODE SERVER  (frontend/server.ts)      │
+│  /api/config  /api/portfolio  /api/yields  /api/chat │
+│                    Groq LLaMA-3.3-70b                │
 └────────────────┬────────────────────┬────────────────┘
                  │ read (public RPC)  │ write (agent wallet)
                  ▼                    ▼
 ┌──────────────────────────────────────────────────────┐
-│              HASHKEY CHAIN TESTNET (chainId 133)      │
-│                                                       │
-│  TreasuryVault ──► RebalanceExecutor                  │
-│       │                    │                          │
-│   user balances       simulated swaps                 │
-│   risk profiles        on-chain logs                  │
-│                                                       │
-│  HSPSettlement  (payment request events)              │
+│              HASHKEY CHAIN TESTNET (chainId 133)     │
+│                                                      │
+│  TreasuryVault ──► RebalanceExecutor                 │
+│       │                    │                         │
+│   user balances       simulated swaps                │
+│   risk profiles        on-chain logs                 │
+│                                                      │
+│  HSPSettlement  (payment request events)             │
 └──────────────────────────────────────────────────────┘
                             ▲
                             │ poll every 5 min
 ┌──────────────────────────────────────────────────────┐
-│            AI AGENT LOOP  (agent/orchestrator.ts)     │
+│            AI AGENT LOOP  (agent/orchestrator.ts)    │
 │  fetch yields → check drift → Groq → execute tx      │
 │  cooldown: 30 min · threshold: 5% drift              │
 └──────────────────────────────────────────────────────┘
