@@ -10,6 +10,7 @@ const config: Config = {
       fontFamily: {
         mono: ["var(--font-mono)", "monospace"],
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        inter: ["var(--font-inter)", "sans-serif"],
       },
       colors: {
         surface:   "#0a0a0a",

@@ -14,7 +14,7 @@ export default function AppHeader({ address, onConnect, onDisconnect }: Props) {
   const pathname = usePathname();
 
   const navLinks = [
-    { href: "/",      label: "Dashboard" },
+    { href: "/app",   label: "Dashboard" },
     { href: "/logs",  label: "Agent Logs" },
   ];
 
