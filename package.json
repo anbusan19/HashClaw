@@ -10,7 +10,8 @@
     "deploy:mainnet": "hardhat run scripts/deploy.ts --network hashkey",
     "seed": "hardhat run scripts/seed.ts --network hashkeyTestnet",
     "agent": "ts-node agent/orchestrator.ts",
-    "ui": "ts-node frontend/server.ts",
+    "ui": "pnpm --dir frontend run dev",
+    "ui:install": "pnpm --dir frontend install",
     "dev": "ts-node agent/orchestrator.ts"
   },
   "keywords": [

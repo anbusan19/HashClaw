@@ -126,6 +126,7 @@ async function main() {
     VEHSK_ADDRESS:      tokenAddresses["veHSK"],
     RWA_SILVER_ADDRESS: tokenAddresses["xXAG"],
     RWA_MMF_ADDRESS:    tokenAddresses["xMMF"],
+    STABLE_LP_ADDRESS:  tokenAddresses["USDC-USDT-LP"],
   };
 
   for (const [key, value] of Object.entries(updates)) {
