@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
-import dotenv from "dotenv";
 import path from "path";
 
-// Load root .env so API routes can read it via process.env
-dotenv.config({ path: path.join(__dirname, "../.env") });
+// Load root .env in local dev only — Vercel injects env vars directly in production
+if (process.env.NODE_ENV !== "production") {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("dotenv").config({ path: path.join(__dirname, "../.env") });
+}
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
