@@ -86,7 +86,9 @@ Recommend a rebalance or confirm hold.`;
     max_tokens: 512,
   });
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
+  const rawContent = completion.choices[0]?.message?.content ?? "{}";
+  // Strip markdown code fences the model sometimes wraps around JSON
+  const raw = rawContent.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
 
   try {
     const parsed = JSON.parse(raw) as RebalanceRecommendation;

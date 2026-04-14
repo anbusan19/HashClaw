@@ -19,6 +19,12 @@ import { fetchAllYieldSignals } from "../agent/signals/yieldFetcher";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
+// ethers v6 returns many values as bigint; JSON.stringify rejects them.
+// This replacer converts any bigint to its decimal string representation.
+function toJSON(data: unknown): string {
+  return JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() : v));
+}
+
 // ── Contract ABIs ─────────────────────────────────────────────────────────────
 const VAULT_ABI = [
   "function getPortfolio(address user) view returns (uint256[] assetIds, uint256[] balances, string[] symbols)",
@@ -50,8 +56,11 @@ function getVault() {
 async function handlePortfolio(): Promise<object> {
   const vault = getVault();
   const user = getWalletAddress();
-  const [[assetIds, balances, symbols], riskProfile]: [[bigint[], bigint[], string[]], number] =
+  const [[assetIds, balances, symbols], rawRisk] =
     await Promise.all([vault.getPortfolio(user), vault.userRiskProfile(user)]);
+
+  // ethers v6 returns uint8 as bigint; coerce to number for JSON safety
+  const riskProfile = Number(rawRisk);
 
   return {
     user,
@@ -85,8 +94,8 @@ async function handleChat(body: string): Promise<object> {
       handleYields(),
     ]);
     contextBlock = `
-Current portfolio: ${JSON.stringify(portfolio)}
-Live yield signals: ${JSON.stringify(yieldsData)}
+Current portfolio: ${toJSON(portfolio)}
+Live yield signals: ${toJSON(yieldsData)}
 `.trim();
   } catch {
     contextBlock = "Portfolio/yield data unavailable (contracts not deployed yet).";
@@ -140,29 +149,32 @@ const server = http.createServer(async (req, res) => {
     // API: portfolio
     if (method === "GET" && url === "/api/portfolio") {
       const data = await handlePortfolio();
+      const body = toJSON(data);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(data));
+      res.end(body);
       return;
     }
 
     // API: yields
     if (method === "GET" && url === "/api/yields") {
       const data = await handleYields();
+      const body = toJSON(data);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(data));
+      res.end(body);
       return;
     }
 
     // API: chat
     if (method === "POST" && url === "/api/chat") {
-      const body = await new Promise<string>((resolve) => {
+      const reqBody = await new Promise<string>((resolve) => {
         let data = "";
         req.on("data", (chunk) => (data += chunk));
         req.on("end", () => resolve(data));
       });
-      const data = await handleChat(body);
+      const data = await handleChat(reqBody);
+      const body = toJSON(data);
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(data));
+      res.end(body);
       return;
     }
 
@@ -170,8 +182,10 @@ const server = http.createServer(async (req, res) => {
     res.end("Not found");
   } catch (err) {
     console.error(err);
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: (err as Error).message }));
+    if (!res.headersSent) {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(toJSON({ error: (err as Error).message }));
+    }
   }
 });
 
