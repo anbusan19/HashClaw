@@ -21,8 +21,14 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "HashClaw — AI Wealth Manager",
-  description: "Autonomous on-chain portfolio management on HashKey Chain",
+  title: "HashClaw — Autonomous RWA Portfolio Rebalancer",
+  description: "On-chain RWA portfolio management on HashKey Chain. AI-driven drift detection, yield-optimised swap execution, and non-custodial settlement via smart contracts.",
+  keywords: ["RWA", "DeFi", "HashKey Chain", "portfolio rebalancing", "AI agent", "on-chain", "yield optimisation"],
+  openGraph: {
+    title: "HashClaw — Autonomous RWA Portfolio Rebalancer",
+    description: "AI-driven drift detection and yield-optimised rebalancing for RWA portfolios on HashKey Chain.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -21,12 +21,12 @@ export default function AppHeader({ address, onConnect, onDisconnect }: Props) {
   return (
     <header className="h-14 flex items-center px-5 gap-4 border-b border-border bg-surface flex-shrink-0">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 mr-2">
+      <Link href="/" className="flex items-center gap-2.5 mr-2">
         <Image src="/hashclaw-logo.png" alt="HashClaw" width={26} height={26} />
         <span className="font-mono text-sm font-semibold uppercase tracking-[0.12em] text-white">
           HashClaw
         </span>
-      </div>
+      </Link>
 
       {/* Nav */}
       <nav className="flex items-center gap-1">
