@@ -16,7 +16,6 @@ export default function LandingPage() {
       <HowItWorks />
       <Architecture />
       <GettingStarted />
-
       <FAQ />
       <Footer />
     </div>

@@ -364,8 +364,8 @@ const HowItWorks = () => {
               </div>
 
               {/* Step nav */}
-              <div className="mt-auto">
-                <div className="flex gap-1.5 mb-4">
+              <div className="flex flex-col pt-10">
+                <div className="flex gap-1.5 mb-6">
                   {steps.map((s) => (
                     <motion.div
                       key={s.id}
