@@ -66,7 +66,10 @@ contract RebalanceExecutor is Ownable, ReentrancyGuard {
         uint256[] calldata amounts,
         uint256[] calldata minAmountsOut,
         string calldata reasoning
-    ) external onlyOwner nonReentrant returns (uint256 planId) {
+    ) external nonReentrant returns (uint256 planId) {
+        // Owner (agent) can rebalance on behalf of any user.
+        // Users can rebalance their own portfolio directly from their wallet.
+        require(msg.sender == user || msg.sender == owner(), "Not authorised");
         require(
             fromAssetIds.length == toAssetIds.length &&
             toAssetIds.length == amounts.length &&
@@ -109,15 +112,15 @@ contract RebalanceExecutor is Ownable, ReentrancyGuard {
         uint256 amount,
         uint256 minAmountOut
     ) internal {
-        // Debit source asset from vault
-        vault.executeTransfer(user, fromAssetId, address(this), amount);
+        // Debit source asset — pure internal accounting, real tokens stay in vault.
+        // (In production: replace with vault.executeTransfer + real DEX call)
+        vault.debitBalance(user, fromAssetId, amount);
 
-        // In production: route through DEX adapter (Uniswap V3, Curve, etc.)
-        // For demo: 1:1 simulated swap with slippage check
+        // Simulated swap: 1:1 with 0.1% fee. Replace with DEX adapter in production.
         uint256 amountOut = _simulateSwap(fromAssetId, toAssetId, amount);
         require(amountOut >= minAmountOut, "Slippage exceeded");
 
-        // Credit destination asset back to user in vault
+        // Credit destination asset to user's internal balance
         vault.creditBalance(user, toAssetId, amountOut);
 
         emit LegExecuted(planId, fromAssetId, toAssetId, amountOut);

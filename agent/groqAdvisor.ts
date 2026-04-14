@@ -51,7 +51,9 @@ export async function getRebalanceRecommendation(
     .join("\n");
 
   const systemPrompt = `You are an on-chain DeFi wealth manager on HashKey Chain.
-Your job: analyse a user's portfolio and current yield signals, then decide whether to rebalance.
+Portfolio drift has been detected and a rebalance WILL execute. Your job is to decide the optimal swap legs.
+You may partially rebalance if APY conditions justify keeping some overweight position.
+You must reduce drift — never propose legs that move assets further from their targets.
 Always return ONLY valid JSON — no markdown, no explanation outside the JSON.
 JSON schema:
 {
@@ -59,22 +61,22 @@ JSON schema:
     {
       "fromAssetId": <number>,
       "toAssetId": <number>,
-      "fraction": <0.0–1.0, portion of fromAsset balance to move>,
+      "fraction": <0.01–1.0, portion of fromAsset balance to sell>,
       "reason": "<one sentence>"
     }
   ],
-  "summary": "<two sentences max, plain English>",
+  "summary": "<1-2 sentences explaining the strategy>",
   "riskScore": <0–10 integer, estimated portfolio risk after rebalance>
 }
-If no rebalance is needed, return an empty legs array.
-Asset IDs: 0=RWA Silver, 1=RWA MMF, 2=veHSK Staking, 3=Stable LP.`;
+Target weights: xXAG 40%, xMMF 30%, veHSK 22%, LP 8%.
+Asset IDs: 0=xXAG, 1=xMMF, 2=veHSK, 3=Stable LP.`;
 
   const userPrompt = `Risk profile: ${RISK_LABELS[portfolio.riskProfile]} (${portfolio.riskProfile}/2)
 Current balances:
 ${balanceLines}
 Live yield signals:
 ${signalLines}
-Recommend a rebalance or confirm hold.`;
+Compute the optimal rebalance legs to reduce drift. Consider whether high-APY assets justify partial rebalancing.`;
 
   const completion = await client.chat.completions.create({
     model: "llama-3.3-70b-versatile",

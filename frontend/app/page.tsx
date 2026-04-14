@@ -90,7 +90,7 @@ export default function Home() {
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         <Sidebar address={address} config={config} signer={signer} onToast={showToast} />
-        <ChatPanel address={address} />
+        <ChatPanel address={address} signer={signer} />
       </div>
 
       {/* Toast */}

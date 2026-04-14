@@ -2,9 +2,29 @@
 
 import { useEffect, useRef, useState } from "react";
 
-interface Message { role: "user" | "assistant"; content: string; ts: string }
+interface RebalancePlan {
+  fromIds: string[];
+  toIds: string[];
+  amounts: string[];
+  minOuts: string[];
+}
 
-interface Props { address: string | null }
+interface RebalanceLegSummary { from: string; to: string; fraction: string; reason: string }
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  ts: string;
+  // set when the assistant has a ready-to-sign rebalance plan
+  rebalancePlan?: {
+    reasoning: string;
+    executorAddress: string;
+    plan: RebalancePlan;
+    legs: RebalanceLegSummary[];
+  };
+}
+
+interface Props { address: string | null; signer: unknown }
 
 const CHIPS = [
   "Should I rebalance?",
@@ -14,29 +34,136 @@ const CHIPS = [
   "How does veHSK staking work?",
 ];
 
+const EXECUTOR_ABI = [
+  "function submitAndExecute(address user, uint256[] fromAssetIds, uint256[] toAssetIds, uint256[] amounts, uint256[] minAmountsOut, string reasoning) returns (uint256 planId)",
+];
+
+const REBALANCE_TRIGGERS = [
+  /\brebalance\s*(now|it|portfolio|please)?\b/i,
+  /\b(proceed|execute|go ahead|do it|confirm|yes,?\s*proceed|yes,?\s*do it)\b/i,
+  /\btrigger\s*(a\s*)?rebalance\b/i,
+];
+
+function isRebalanceIntent(msg: string) {
+  return REBALANCE_TRIGGERS.some((re) => re.test(msg));
+}
+
+const STORAGE_KEY = "hashclaw_chat_history";
+
+const WELCOME: Message = {
+  role: "assistant",
+  content: "Hey — I'm HashClaw, your AI wealth manager on HashKey Chain.\n\nConnect your wallet and I'll analyse your portfolio in real time. Or just ask me anything.",
+  ts: "—",
+};
+
+function loadMessages(): Message[] {
+  if (typeof window === "undefined") return [WELCOME];
+  try {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved) as Message[];
+  } catch { /* ignore */ }
+  return [WELCOME];
+}
+
 function now() {
   return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-export default function ChatPanel({ address }: Props) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Hey — I'm HashClaw, your AI wealth manager on HashKey Chain.\n\nConnect your wallet and I'll analyse your portfolio in real time. Or just ask me anything.",
-      ts: now(),
-    },
-  ]);
+export default function ChatPanel({ address, signer }: Props) {
+  const [messages, setMessages] = useState<Message[]>(loadMessages);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [showChips, setShowChips] = useState(true);
+  const [executingPlanIdx, setExecutingPlanIdx] = useState<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Persist messages across navigation
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); } catch { /* ignore */ }
   }, [messages]);
 
+  // ── Fetch AI rebalance plan for connected wallet ───────────────────────────
+  async function fetchRebalancePlan(force: boolean): Promise<Message> {
+    if (!address) {
+      return { role: "assistant", content: "Connect your wallet first to rebalance your portfolio.", ts: now() };
+    }
+
+    const res = await fetch("/api/rebalance-plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, force }),
+    });
+    const data = await res.json() as {
+      status: string;
+      reason?: string;
+      reasoning?: string;
+      executorAddress?: string;
+      plan?: RebalancePlan;
+      legs?: RebalanceLegSummary[];
+    };
+
+    if (data.status === "hold" || data.status === "no_balance") {
+      return { role: "assistant", content: data.reason ?? "No rebalance needed.", ts: now() };
+    }
+
+    if (data.status === "ready" && data.plan && data.executorAddress) {
+      const legText = data.legs?.map((l) => `  ${l.from} → ${l.to} (${l.fraction}%)`).join("\n") ?? "";
+      return {
+        role: "assistant",
+        content: `${data.reasoning}\n\nProposed swaps:\n${legText}\n\nSign with your wallet to execute on-chain.`,
+        ts: now(),
+        rebalancePlan: {
+          reasoning: data.reasoning ?? "",
+          executorAddress: data.executorAddress,
+          plan: data.plan,
+          legs: data.legs ?? [],
+        },
+      };
+    }
+
+    return { role: "assistant", content: "Could not compute a rebalance plan.", ts: now() };
+  }
+
+  // ── Execute signed rebalance via MetaMask ─────────────────────────────────
+  async function executeRebalance(msgIdx: number, plan: Message["rebalancePlan"]) {
+    if (!plan || !signer || !address) return;
+    setExecutingPlanIdx(msgIdx);
+    try {
+      const { ethers } = await import("ethers");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const executor = new ethers.Contract(plan.executorAddress, EXECUTOR_ABI, signer as any);
+      const tx = await executor.submitAndExecute(
+        address,
+        plan.plan.fromIds,
+        plan.plan.toIds,
+        plan.plan.amounts,
+        plan.plan.minOuts,
+        plan.reasoning
+      );
+      const receipt = await tx.wait();
+      const explorerUrl = `https://testnet-explorer.hsk.xyz/tx/${receipt.hash}`;
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content: `Rebalance confirmed on-chain. ${plan.legs.length} swap${plan.legs.length !== 1 ? "s" : ""} executed.\nTx: ${explorerUrl}`,
+          ts: now(),
+        },
+      ]);
+    } catch (e: unknown) {
+      const msg = (e as Error).message?.slice(0, 120) ?? "Transaction failed";
+      setMessages((m) => [
+        ...m,
+        { role: "assistant", content: `Transaction failed: ${msg}`, ts: now() },
+      ]);
+    }
+    setExecutingPlanIdx(null);
+  }
+
+  // ── Send message ──────────────────────────────────────────────────────────
   async function send(text: string) {
     if (!text.trim() || loading) return;
     const userMsg: Message = { role: "user", content: text.trim(), ts: now() };
@@ -45,26 +172,28 @@ export default function ChatPanel({ address }: Props) {
     setShowChips(false);
     setLoading(true);
 
-    const history = messages
-      .filter((m) => m.role !== "assistant" || messages.indexOf(m) > 0)
-      .map(({ role, content }) => ({ role, content }));
-
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text.trim(), history, address }),
-      });
-      const data = await res.json();
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: data.reply ?? data.error ?? "No response.", ts: now() },
-      ]);
+      let reply: Message;
+
+      if (isRebalanceIntent(text)) {
+        reply = await fetchRebalancePlan(true);
+      } else {
+        const history = messages
+          .filter((m) => m.role !== "assistant" || messages.indexOf(m) > 0)
+          .map(({ role, content }) => ({ role, content }));
+
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text.trim(), history, address }),
+        });
+        const data = await res.json() as { reply?: string; error?: string };
+        reply = { role: "assistant", content: data.reply ?? data.error ?? "No response.", ts: now() };
+      }
+
+      setMessages((m) => [...m, reply]);
     } catch {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: "Network error — is the server running?", ts: now() },
-      ]);
+      setMessages((m) => [...m, { role: "assistant", content: "Network error — is the server running?", ts: now() }]);
     }
     setLoading(false);
   }
@@ -85,10 +214,7 @@ export default function ChatPanel({ address }: Props) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
         {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-          >
+          <div key={i} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
             <div
               className={`max-w-[68%] px-4 py-3 rounded-xl text-sm leading-relaxed whitespace-pre-wrap font-sans ${
                 msg.role === "user"
@@ -97,10 +223,23 @@ export default function ChatPanel({ address }: Props) {
               }`}
             >
               {msg.content}
+
+              {/* Sign & Execute button — only on ready plan messages */}
+              {msg.rebalancePlan && (
+                <button
+                  onClick={() => executeRebalance(i, msg.rebalancePlan)}
+                  disabled={executingPlanIdx !== null || !signer}
+                  className="mt-3 w-full font-mono text-2xs uppercase tracking-[0.12em] px-3 py-2 rounded border border-white text-white hover:bg-white hover:text-black disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {executingPlanIdx === i
+                    ? "Waiting for confirmation…"
+                    : !signer
+                    ? "Connect wallet to sign"
+                    : "Sign & Execute Rebalance"}
+                </button>
+              )}
             </div>
-            <span className="font-mono text-2xs text-muted mt-1 uppercase tracking-wider">
-              {msg.ts}
-            </span>
+            <span className="font-mono text-2xs text-muted mt-1 uppercase tracking-wider">{msg.ts}</span>
           </div>
         ))}
 
@@ -109,11 +248,7 @@ export default function ChatPanel({ address }: Props) {
             <div className="bg-surface-2 border border-border rounded-xl rounded-bl-sm px-4 py-3">
               <span className="flex gap-1">
                 {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="w-1 h-1 rounded-full bg-muted-2 animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s` }}
-                  />
+                  <span key={i} className="w-1 h-1 rounded-full bg-muted-2 animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
                 ))}
               </span>
             </div>

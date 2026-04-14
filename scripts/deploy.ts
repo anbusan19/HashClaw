@@ -33,12 +33,20 @@ async function main() {
   console.log("     RebalanceExecutor →", executorAddr);
 
   // ── 3. HSPSettlement ──────────────────────────────────────────────────────
-  console.log("3/3  Deploying HSPSettlement...");
+  console.log("3/4  Deploying HSPSettlement...");
   const HSPSettlement = await ethers.getContractFactory("HSPSettlement");
   const hsp = await HSPSettlement.deploy(deployer.address);
   await hsp.waitForDeployment();
   const hspAddr = await hsp.getAddress();
   console.log("     HSPSettlement →", hspAddr);
+
+  // ── 4. YieldOracle ────────────────────────────────────────────────────────
+  console.log("4/4  Deploying YieldOracle...");
+  const YieldOracle = await ethers.getContractFactory("YieldOracle");
+  const oracle = await YieldOracle.deploy(deployer.address);
+  await oracle.waitForDeployment();
+  const oracleAddr = await oracle.getAddress();
+  console.log("     YieldOracle →", oracleAddr);
 
   // ── Wire permissions ──────────────────────────────────────────────────────
   console.log("\nWiring permissions...");
@@ -51,6 +59,16 @@ async function main() {
   // Deployer wallet is also set as an authorised relayer on HSPSettlement by default (owner == deployer)
   console.log("  HSPSettlement relayer: owner (deployer) ✓");
 
+  // Seed YieldOracle with initial APY values (basis points: 100 = 1%)
+  // These reflect real-world reference rates: silver ETF ~4.8%, MMF ~5.2%, HSK staking ~12.4%, stablecoin LP ~3.1%
+  const tx2 = await oracle.setBatchApy(
+    [0, 1, 2, 3],
+    [480, 520, 1240, 310],
+    ["xXAG", "xMMF", "veHSK", "USDC-USDT LP"]
+  );
+  await tx2.wait();
+  console.log("  YieldOracle seeded with initial APYs ✓");
+
   // ── Persist addresses ─────────────────────────────────────────────────────
   const envPath = path.join(__dirname, "../.env");
   let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
@@ -59,6 +77,7 @@ async function main() {
     TREASURY_VAULT_ADDRESS: vaultAddr,
     REBALANCE_EXECUTOR_ADDRESS: executorAddr,
     HSP_SETTLEMENT_ADDRESS: hspAddr,
+    YIELD_ORACLE_ADDRESS: oracleAddr,
   };
 
   for (const [key, value] of Object.entries(updates)) {
@@ -75,9 +94,10 @@ async function main() {
 
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
   console.log("Deployment complete");
-  console.log("  TREASURY_VAULT_ADDRESS   =", vaultAddr);
+  console.log("  TREASURY_VAULT_ADDRESS     =", vaultAddr);
   console.log("  REBALANCE_EXECUTOR_ADDRESS =", executorAddr);
-  console.log("  HSP_SETTLEMENT_ADDRESS   =", hspAddr);
+  console.log("  HSP_SETTLEMENT_ADDRESS     =", hspAddr);
+  console.log("  YIELD_ORACLE_ADDRESS       =", oracleAddr);
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 

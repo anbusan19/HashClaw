@@ -172,13 +172,39 @@ async function runOnce(): Promise<void> {
     return;
   }
 
-  // ── Ask AI ──────────────────────────────────────────────────────────────────
+  // ── AI decides optimal legs; math fallback if AI returns none ───────────────
   const recommendation = await getRebalanceRecommendation(portfolio, signals);
   console.log("  AI summary:", recommendation.summary);
   console.log("  Legs proposed:", recommendation.legs.length);
 
-  if (recommendation.legs.length > 0) {
-    await executeRebalance(executor, userAddress, portfolio, recommendation.legs, recommendation.summary);
+  let legs = recommendation.legs;
+
+  // Math fallback: if AI returned no legs despite drift, compute them directly
+  if (legs.length === 0) {
+    const balances = portfolio.balances;
+    const total = balances.reduce((s, b) => s + Number(b.amount), 0);
+    if (total > 0) {
+      legs = balances
+        .filter((b) => {
+          const currentFrac = Number(b.amount) / total;
+          return (currentFrac - (TARGET_WEIGHTS[b.assetId] ?? 0)) > 0.01;
+        })
+        .flatMap((b) => {
+          const currentFrac = Number(b.amount) / total;
+          const delta = currentFrac - (TARGET_WEIGHTS[b.assetId] ?? 0);
+          const underWeight = balances
+            .map((t) => ({ ...t, deficit: (TARGET_WEIGHTS[t.assetId] ?? 0) - Number(t.amount) / total }))
+            .filter((t) => t.deficit > 0.01 && t.assetId !== b.assetId)
+            .sort((a, c) => c.deficit - a.deficit)[0];
+          if (!underWeight) return [];
+          return [{ fromAssetId: b.assetId, toAssetId: underWeight.assetId, fraction: Math.min(delta / currentFrac, 0.95), reason: "Math fallback: restoring target weight." }];
+        });
+      if (legs.length > 0) console.log("  Using math fallback legs:", legs.length);
+    }
+  }
+
+  if (legs.length > 0) {
+    await executeRebalance(executor, userAddress, portfolio, legs, recommendation.summary);
   } else {
     console.log("  AI recommends hold.");
   }

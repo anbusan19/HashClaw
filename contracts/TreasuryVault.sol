@@ -116,8 +116,9 @@ contract TreasuryVault is Ownable, ReentrancyGuard {
     // ─── Executor-only (called by RebalanceExecutor) ──────────────────────────
 
     /**
-     * @notice Transfers tokens from vault to a target address (e.g., a DEX or staking contract).
-     *         Only authorised executors may call this.
+     * @notice Transfers tokens from vault to a target address (e.g., a real DEX or staking contract).
+     *         Use this only when tokens genuinely leave the vault (real DEX integration).
+     *         For simulated/internal swaps use debitBalance + creditBalance instead.
      */
     function executeTransfer(
         address user,
@@ -128,6 +129,21 @@ contract TreasuryVault is Ownable, ReentrancyGuard {
         require(userBalances[user][assetId] >= amount, "Insufficient user balance");
         userBalances[user][assetId] -= amount;
         IERC20(assets[assetId].tokenAddress).safeTransfer(to, amount);
+        emit AllocationUpdated(user, assetId, userBalances[user][assetId]);
+    }
+
+    /**
+     * @notice Debits a user's internal balance without moving real tokens.
+     *         Used for simulated swaps — pair with creditBalance on the destination asset.
+     *         Real tokens remain in the vault; only the accounting changes.
+     */
+    function debitBalance(
+        address user,
+        uint256 assetId,
+        uint256 amount
+    ) external onlyExecutor assetExists(assetId) {
+        require(userBalances[user][assetId] >= amount, "Insufficient user balance");
+        userBalances[user][assetId] -= amount;
         emit AllocationUpdated(user, assetId, userBalances[user][assetId]);
     }
 
