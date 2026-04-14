@@ -19,8 +19,8 @@ build/
 # pnpm
 .pnpm-store/
 
-# Logs
-logs/
+# Logs (top-level only — excludes Next.js app routes named "logs")
+/logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
